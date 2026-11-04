@@ -12,8 +12,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
-from schemas import AnswerRequest, AnswerResponse, EditRequest, EditResponse
-from service import AIService, ServiceError
+from app.schemas import AnswerRequest, AnswerResponse, EditRequest, EditResponse
+from app.services.service import AIService, ServiceError
 from settings import Settings
 
 logger = logging.getLogger("tracking_journal_ai")

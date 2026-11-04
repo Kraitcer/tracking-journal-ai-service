@@ -1,4 +1,4 @@
-"""Context assembly, structured generation, and source binding."""
+"""Подготовка контекста, генерация AI-ответов и привязка к источникам."""
 
 import asyncio
 import json
@@ -10,8 +10,8 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from providers import AmveraClient, ProviderError, TavilyClient
-from schemas import (
+from app.api.providers import AmveraClient, ProviderError, TavilyClient
+from app.schemas import (
     AnswerContent,
     AnswerRequest,
     AnswerResponse,
@@ -29,7 +29,10 @@ Output = TypeVar("Output")
 
 
 class ServiceError(Exception):
+    """Ошибка AI-сервиса с сообщением, HTTP-статусом и кодом для ответа API."""
+
     def __init__(self, message: str, status_code: int, code: str):
+        """Сохраняет описание и коды ошибки для обработки на уровне API."""
         super().__init__(message)
         self.message = message
         self.status_code = status_code
@@ -37,12 +40,15 @@ class ServiceError(Exception):
 
 
 class AIService:
+    """Объединяет веб-поиск, записи пользователя и модель для ответов и правки текста."""
+
     def __init__(
         self,
         settings: Settings,
         amvera: AmveraClient | None = None,
         tavily: TavilyClient | None = None,
     ):
+        """Подключает клиентов провайдеров и учёт одновременно выполняемых запросов."""
         self.settings = settings
         self.amvera = amvera or AmveraClient(settings)
         self.tavily = tavily or TavilyClient(settings)
@@ -54,6 +60,12 @@ class AIService:
         payload: AnswerRequest,
         progress: ProgressCallback | None = None,
     ) -> AnswerResponse:
+        """Формирует ответ на вопрос с источниками, изображениями и статистикой токенов.
+
+        По настройкам запроса собирает контекст из веб-поиска и записей
+        пользователя, проверяет его размер и генерирует структурированные блоки.
+        При наличии обработчика сообщает ему этапы выполнения.
+        """
         async with self._request_slot():
             request_id = str(uuid4())
             sources: list[Source] = []
@@ -112,6 +124,11 @@ class AIService:
         payload: EditRequest,
         progress: ProgressCallback | None = None,
     ) -> EditResponse:
+        """Предлагает переписанный или продолженный текст, не сохраняя исходную запись.
+
+        Для продолжения требует инструкцию пользователя; возвращает проверенный
+        вариант текста и доступную статистику токенов.
+        """
         async with self._request_slot():
             request_id = str(uuid4())
             if payload.action == "continue" and not payload.instruction:
@@ -156,6 +173,7 @@ class AIService:
             )
 
     async def _search(self, question: str, include_images: bool) -> dict:
+        """Выполняет поиск Tavily и преобразует ошибку провайдера в ошибку сервиса."""
         try:
             return await self.tavily.search(question, include_images)
         except ProviderError as exc:
@@ -164,6 +182,11 @@ class AIService:
     def _build_web_context(
         self, data: dict, include_images: bool
     ) -> tuple[list[Source], list[str], list[ImageBlock]]:
+        """Собирает веб-источники, контекст модели и связанные блоки изображений.
+
+        Пропускает непригодные результаты, ограничивает объём контекста
+        и помечает содержимое страниц как недоверенные данные.
+        """
         sources: list[Source] = []
         context: list[str] = []
         images: list[ImageBlock] = []
@@ -224,6 +247,7 @@ class AIService:
     def _build_record_context(
         self, records: list[UserRecord]
     ) -> tuple[list[Source], list[str]]:
+        """Проверяет объём записей и создаёт локальные источники и контекст модели."""
         total_chars = sum(len(record.title) + len(record.text) for record in records)
         if total_chars > self.settings.max_context_chars:
             raise ServiceError(
@@ -254,6 +278,11 @@ class AIService:
         sources: list[Source],
         progress: ProgressCallback | None,
     ) -> tuple[AnswerContent, dict[str, int] | None]:
+        """Готовит запрос модели и возвращает блоки ответа с проверенными ссылками.
+
+        Передаёт вопрос, контекст и допустимые идентификаторы источников,
+        задавая правила структуры ответа и цитирования.
+        """
         source_ids = [source.source_id for source in sources]
         system = (
             "Answer the question. Return only a JSON object matching "
@@ -291,6 +320,11 @@ class AIService:
         validator: Callable[[object], Output],
         progress: ProgressCallback | None,
     ) -> tuple[Output, dict[str, int] | None]:
+        """Получает JSON от Amvera и проверяет его переданным валидатором.
+
+        При неверном формате или содержимом один раз просит модель исправить
+        ответ; ошибки провайдера и повторный провал проверки передаёт как ServiceError.
+        """
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -335,6 +369,7 @@ class AIService:
     def _validate_answer_json(
         self, value: object, require_citations: bool, valid_source_ids: set[str]
     ) -> AnswerContent:
+        """Проверяет схему блоков, допустимость ссылок и обязательное цитирование."""
         content = AnswerContent.model_validate(value)
         for block in content.blocks:
             citations = getattr(block, "citations", [])
@@ -350,6 +385,7 @@ class AIService:
 
     @staticmethod
     def _validate_edit_json(value: object) -> dict[str, str]:
+        """Проверяет, что результат правки содержит только непустой текст до 12 000 символов."""
         if (
             not isinstance(value, dict)
             or set(value) != {"suggested_text"}
@@ -362,6 +398,7 @@ class AIService:
 
     @staticmethod
     def _format_record(record: UserRecord, source_id: str) -> str:
+        """Форматирует запись с метаданными и ID источника как недоверенный контекст."""
         return (
             f"[{source_id}] User record {record.entity_type} "
             f"(id: {record.id}, entity_id: {record.entity_id})\n"
@@ -370,6 +407,10 @@ class AIService:
 
     @asynccontextmanager
     async def _request_slot(self):
+        """Занимает слот запроса или отклоняет его с HTTP 429 при достижении лимита.
+
+        Освобождает занятый слот после выполнения, в том числе при ошибке.
+        """
         async with self._request_lock:
             if self._active_requests >= self.settings.max_concurrent_requests:
                 raise ServiceError(
@@ -386,11 +427,13 @@ class AIService:
 
 
 async def _report(callback: ProgressCallback | None, stage: str) -> None:
+    """Передаёт текущий этап выполнения обработчику прогресса, если он задан."""
     if callback:
         await callback(stage)
 
 
 def _valid_http_url(value: object) -> str | None:
+    """Возвращает строку до 2048 символов с префиксом HTTP(S), иначе None."""
     if not isinstance(value, str) or len(value) > 2048:
         return None
     if value.startswith(("https://", "http://")):

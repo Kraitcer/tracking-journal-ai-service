@@ -1,4 +1,4 @@
-"""HTTP adapters for Amvera LLM Inference and Tavily Search."""
+"""HTTP-клиенты внешних сервисов генерации текста и веб-поиска."""
 
 from typing import Any
 
@@ -8,19 +8,24 @@ from settings import Settings
 
 
 class ProviderError(Exception):
-    """Raised when an external provider cannot complete a request."""
+    """Ошибка внешнего провайдера, передаваемая сервисному слою приложения."""
 
     def __init__(self, provider: str, message: str, status_code: int = 502):
+        """Сохраняет провайдера, описание ошибки и HTTP-статус для ответа API."""
         super().__init__(message)
         self.provider = provider
         self.status_code = status_code
 
 
 class AmveraClient:
+    """Клиент Amvera, генерирующий ответы модели для AI-функций приложения."""
+
     def __init__(self, settings: Settings):
+        """Создаёт клиент с настройками API, модели и таймаута запросов."""
         self.settings = settings
 
     async def complete(self, messages: list[dict[str, str]]) -> tuple[str, dict[str, int] | None]:
+        """Запрашивает у модели ответ и возвращает его текст и доступную статистику токенов."""
         if not self.settings.amvera_api_key or not self.settings.amvera_model:
             raise ProviderError(
                 "amvera",
@@ -83,12 +88,16 @@ class AmveraClient:
 
 
 class TavilyClient:
+    """Клиент Tavily для поиска веб-источников и, при необходимости, изображений."""
+
     def __init__(self, settings: Settings):
+        """Создаёт клиент с настройками ключа API, таймаута и числа результатов."""
         self.settings = settings
 
     async def search(
         self, query: str, include_images: bool
     ) -> dict[str, Any]:
+        """Ищет источники по запросу и возвращает ответ Tavily для сборки контекста."""
         if not self.settings.tavily_api_key:
             raise ProviderError(
                 "tavily",
@@ -132,6 +141,7 @@ class TavilyClient:
 
 
 def _provider_http_message(response: httpx.Response) -> str:
+    """Преобразует HTTP-ошибку провайдера в безопасное для приложения сообщение."""
     if response.status_code in {401, 403}:
         return "The external provider rejected its configured API key."
     if response.status_code == 429:

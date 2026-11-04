@@ -1,4 +1,4 @@
-"""Environment-based service configuration."""
+"""Настройки AI-сервиса и загрузка их значений из переменных окружения."""
 
 import os
 from dataclasses import dataclass
@@ -6,6 +6,13 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class Settings:
+    """Неизменяемые настройки провайдеров и ограничений AI-сервиса.
+
+    Хранит ключи API, адрес и модель Amvera, таймаут HTTP-запросов,
+    лимиты выходных токенов, параллельных запросов и результатов поиска,
+    а также ограничения объёма одного источника и общего контекста в символах.
+    """
+
     amvera_api_key: str = ""
     amvera_base_url: str = "https://inference.waw0.amvera.ru/v1"
     amvera_model: str = ""
@@ -19,6 +26,12 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        """Создаёт настройки из окружения, подставляя отсутствующим значения по умолчанию.
+
+        Убирает пробелы по краям ключей API и имени модели, а также завершающие
+        слеши адреса Amvera. Числовые лимиты должны быть больше нуля;
+        неверные значения вызывают ValueError.
+        """
         return cls(
             amvera_api_key=os.getenv("AMVERA_API_KEY", "").strip(),
             amvera_base_url=os.getenv(
@@ -38,6 +51,10 @@ class Settings:
 
 
 def _positive_float(name: str, default: float) -> float:
+    """Читает дробное число из переменной окружения или берёт значение по умолчанию.
+
+    Вызывает ValueError при ошибке преобразования или значении не больше нуля.
+    """
     value = float(os.getenv(name, str(default)))
     if value <= 0:
         raise ValueError(f"{name} must be greater than zero.")
@@ -45,6 +62,10 @@ def _positive_float(name: str, default: float) -> float:
 
 
 def _positive_int(name: str, default: int) -> int:
+    """Читает целое число из переменной окружения или берёт значение по умолчанию.
+
+    Вызывает ValueError при ошибке преобразования или значении не больше нуля.
+    """
     value = int(os.getenv(name, str(default)))
     if value <= 0:
         raise ValueError(f"{name} must be greater than zero.")
