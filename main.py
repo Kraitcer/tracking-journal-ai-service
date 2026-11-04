@@ -1,4 +1,4 @@
-"""FastAPI entry point for the Tracking Journal AI service."""
+"""Точка входа AI-сервиса: создание FastAPI-приложения, маршруты и SSE-события."""
 
 import asyncio
 import logging
@@ -20,6 +20,7 @@ logger = logging.getLogger("tracking_journal_ai")
 
 
 def get_service(request: Request) -> AIService:
+    """Возвращает общий экземпляр AI-сервиса для внедрения в обработчики запросов."""
     return request.app.state.ai_service
 
 
@@ -28,11 +29,17 @@ ServiceDependency = Annotated[AIService, Depends(get_service)]
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
+    """Настраивает логирование при запуске приложения до начала обработки запросов."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     yield
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    """Создаёт приложение с AI-сервисом, маршрутами и обработчиками ошибок.
+
+    Использует переданные настройки или загружает их из окружения.
+    Регистрирует обычные JSON-ответы и SSE-потоки событий выполнения.
+    """
     application = FastAPI(
         title="Tracking Journal AI Service",
         description=(
@@ -46,6 +53,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.middleware("http")
     async def limit_request_body(request: Request, call_next: Callable) -> Any:
+        """Проверяет Content-Length и отклоняет заявленный размер свыше 1 000 000 байт.
+
+        Возвращает HTTP 400 для нецелого заголовка и HTTP 413 при превышении лимита.
+        При отсутствии заголовка пропускает запрос без проверки размера тела.
+        """
         content_length = request.headers.get("content-length")
         if content_length:
             try:
@@ -74,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.exception_handler(ServiceError)
     async def service_error_handler(_: Request, exc: ServiceError) -> JSONResponse:
+        """Преобразует ошибку AI-сервиса в JSON с её HTTP-статусом, кодом и сообщением."""
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": {"code": exc.code, "message": exc.message}},
@@ -83,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def validation_error_handler(
         _: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        """Возвращает HTTP 422 с описаниями ошибок проверки входных данных."""
         return JSONResponse(
             status_code=422,
             content={
@@ -103,6 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.get("/", tags=["status"])
     async def root() -> dict[str, str]:
+        """Возвращает название сервиса и адреса документации и схемы OpenAPI."""
         return {
             "service": "Tracking Journal AI Service",
             "docs": "/docs",
@@ -111,6 +126,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.get("/health", tags=["status"])
     async def health() -> dict[str, str]:
+        """Подтверждает доступность приложения без проверки внешних провайдеров."""
         return {"status": "ok"}
 
     @application.post(
@@ -122,6 +138,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def answer(
         payload: AnswerRequest, ai_service: ServiceDependency
     ) -> AnswerResponse:
+        """Передаёт вопрос AI-сервису и возвращает готовый структурированный ответ."""
         return await ai_service.answer(payload)
 
     @application.post(
@@ -133,6 +150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def edit(
         payload: EditRequest, ai_service: ServiceDependency
     ) -> EditResponse:
+        """Возвращает предложенную AI-сервисом правку или продолжение исходного текста."""
         return await ai_service.edit(payload)
 
     @application.post(
@@ -144,6 +162,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def answer_events(
         payload: AnswerRequest, ai_service: ServiceDependency
     ) -> AsyncIterator[ServerSentEvent]:
+        """Передаёт по SSE этапы подготовки ответа и итоговый результат либо ошибку."""
         async for event in _event_stream(
             lambda notify: ai_service.answer(payload, notify)
         ):
@@ -158,6 +177,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def edit_events(
         payload: EditRequest, ai_service: ServiceDependency
     ) -> AsyncIterator[ServerSentEvent]:
+        """Передаёт по SSE этапы правки текста и итоговый результат либо ошибку."""
         async for event in _event_stream(
             lambda notify: ai_service.edit(payload, notify)
         ):
@@ -171,13 +191,20 @@ Operation = Callable[[ProgressCallback], Awaitable[AnswerResponse | EditResponse
 
 
 async def _event_stream(operation: Operation) -> AsyncIterator[ServerSentEvent]:
+    """Запускает AI-операцию и выдаёт SSE-события начала, прогресса и результата.
+
+    Передаёт ошибки отдельными событиями, логирует неожиданные исключения
+    и отменяет незавершённую операцию при закрытии потока.
+    """
     request_id = str(uuid4())
     queue: asyncio.Queue[tuple[str | None, Any]] = asyncio.Queue()
 
     async def notify(stage: str) -> None:
+        """Ставит в очередь событие прогресса с этапом и идентификатором потока."""
         await queue.put(("progress", {"request_id": request_id, "stage": stage}))
 
     async def run_operation() -> None:
+        """Выполняет операцию и ставит в очередь результат или ошибку и признак завершения."""
         try:
             response = await operation(notify)
             await queue.put(("result", response.model_dump(mode="json")))

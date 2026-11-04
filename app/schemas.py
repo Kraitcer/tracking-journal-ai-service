@@ -1,4 +1,4 @@
-"""Validated API request and response models."""
+"""Схемы проверки запросов, структурированных AI-ответов и источников данных."""
 
 from typing import Annotated, Literal
 
@@ -8,6 +8,8 @@ EntityType = Literal["project", "goal", "task", "subTask"]
 
 
 class UserRecord(BaseModel):
+    """Запись проекта, цели, задачи или подзадачи для передачи модели как контекста."""
+
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1, max_length=100)
@@ -18,6 +20,8 @@ class UserRecord(BaseModel):
 
 
 class AnswerRequest(BaseModel):
+    """Запрос ответа на вопрос с необязательным веб-поиском и записями пользователя."""
+
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(min_length=1, max_length=4000)
@@ -27,12 +31,15 @@ class AnswerRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_web_search_for_images(self) -> "AnswerRequest":
+        """Отклоняет запрос изображений без включённого веб-поиска."""
         if self.include_images and not self.web_search:
             raise ValueError("include_images requires web_search=true.")
         return self
 
 
 class EditRequest(BaseModel):
+    """Запрос переписывания или продолжения текста с инструкцией и контекстом."""
+
     model_config = ConfigDict(extra="forbid")
 
     action: Literal["rewrite", "continue"]
@@ -42,10 +49,14 @@ class EditRequest(BaseModel):
 
 
 class SourceReference(BaseModel):
+    """Ссылка на источник по его идентификатору, без дублирования данных источника."""
+
     source_id: str = Field(min_length=1, max_length=100)
 
 
 class ParagraphBlock(BaseModel):
+    """Абзац AI-ответа с текстом и идентификаторами подтверждающих источников."""
+
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["paragraph"]
@@ -54,6 +65,8 @@ class ParagraphBlock(BaseModel):
 
 
 class HeadingBlock(BaseModel):
+    """Заголовок AI-ответа первого, второго или третьего уровня со ссылками на источники."""
+
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["heading"]
@@ -63,6 +76,8 @@ class HeadingBlock(BaseModel):
 
 
 class ListBlock(BaseModel):
+    """Маркированный или нумерованный список AI-ответа со ссылками на источники."""
+
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["list"]
@@ -72,6 +87,8 @@ class ListBlock(BaseModel):
 
 
 class TableBlock(BaseModel):
+    """Таблица AI-ответа с заголовками столбцов, строками и ссылками на источники."""
+
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["table"]
@@ -81,12 +98,15 @@ class TableBlock(BaseModel):
 
     @model_validator(mode="after")
     def validate_row_widths(self) -> "TableBlock":
+        """Проверяет, что число ячеек каждой строки совпадает с числом столбцов."""
         if any(len(row) != len(self.columns) for row in self.rows):
             raise ValueError("Every table row must match the number of columns.")
         return self
 
 
 class ImageBlock(BaseModel):
+    """Изображение в ответе с HTTP(S)-адресом, описанием и идентификатором источника."""
+
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["image"]
@@ -102,6 +122,8 @@ AnswerBlock = Annotated[
 
 
 class Source(BaseModel):
+    """Данные веб-источника или локальной записи, на которые ссылаются блоки ответа."""
+
     model_config = ConfigDict(extra="forbid")
 
     source_id: str
@@ -113,12 +135,19 @@ class Source(BaseModel):
 
 
 class AnswerContent(BaseModel):
+    """Структурированное содержимое ответа модели для проверки перед выдачей клиенту."""
+
     model_config = ConfigDict(extra="forbid")
 
     blocks: list[AnswerBlock] = Field(min_length=1, max_length=100)
 
 
 class AnswerResponse(BaseModel):
+    """Ответ API с блоками, источниками, предупреждениями и сведениями о генерации.
+
+    Содержит идентификатор запроса, имя модели и доступную статистику токенов.
+    """
+
     request_id: str
     blocks: list[AnswerBlock]
     sources: list[Source]
@@ -128,6 +157,12 @@ class AnswerResponse(BaseModel):
 
 
 class EditResponse(BaseModel):
+    """Результат правки с предложенным текстом без изменения исходной записи.
+
+    Содержит идентификатор запроса, действие, имя модели и статистику токенов,
+    если она доступна.
+    """
+
     request_id: str
     action: Literal["rewrite", "continue"]
     suggested_text: str
