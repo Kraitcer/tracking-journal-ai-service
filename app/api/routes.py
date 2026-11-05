@@ -132,7 +132,8 @@ async def _event_stream(operation: Operation) -> AsyncIterator[ServerSentEvent]:
                     },
                 )
             )
-        except Exception:
+        # Keep unexpected failures inside the stream and avoid exposing internal details.
+        except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Unexpected streaming request failure: %s", request_id)
             await queue.put(
                 (
