@@ -47,6 +47,25 @@ uvicorn main:app --host 127.0.0.1 --port 8000
 The service binds to localhost by default in these commands and does not enable
 permissive CORS.
 
+## Run in the local Docker Compose stack
+
+From the repository root, optionally copy `.env.example` to `.env` in this
+directory and set `AMVERA_API_KEY`, `AMVERA_MODEL`, and `TAVILY_API_KEY` if
+needed. Compose can start the service without this file, but real AI requests
+require the relevant provider settings.
+
+```powershell
+docker compose up -d --build ai
+docker compose logs -f ai
+```
+
+Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The port is
+published on localhost only. Saving Python files in `main.py`, `settings.py`,
+or `app/` reloads the application automatically; changes to dependencies or
+the Dockerfile require rebuilding with `docker compose up -d --build ai`.
+This Compose service is for local development and is not part of the Amvera
+deployment configuration.
+
 ## API examples
 
 Use the **Try it out** button in Swagger. The service accepts and returns JSON.
