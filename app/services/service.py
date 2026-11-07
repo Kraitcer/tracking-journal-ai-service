@@ -177,7 +177,7 @@ class AIService:
         try:
             return await self.tavily.search(question, include_images)
         except ProviderError as exc:
-            raise ServiceError(exc.args[0], exc.status_code, f"{exc.provider}_error") from exc
+            raise ServiceError(str(exc), exc.status_code, exc.code) from exc
 
     def _build_web_context(
         self, data: dict, include_images: bool
@@ -334,7 +334,7 @@ class AIService:
                 raw, usage = await self.amvera.complete(messages)
             except ProviderError as exc:
                 raise ServiceError(
-                    exc.args[0], exc.status_code, f"{exc.provider}_error"
+                    str(exc), exc.status_code, exc.code
                 ) from exc
             try:
                 parsed = json.loads(raw)

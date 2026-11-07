@@ -2,9 +2,9 @@ import json
 
 from fastapi.testclient import TestClient
 
+from app.api.providers import ProviderError
+from app.services.service import AIService
 from main import create_app
-from providers import ProviderError
-from service import AIService
 from settings import Settings
 
 

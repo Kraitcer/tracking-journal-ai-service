@@ -211,6 +211,42 @@ validation details for invalid requests. Provider credentials and provider
 response bodies are not included in error messages. Logs do not include prompts,
 records, or generated text.
 
+Provider errors now have specific codes instead of the generic `amvera_error`
+or `tavily_error`. The table below uses the `amvera_` prefix; shared HTTP,
+configuration, network, and JSON errors use `tavily_` for web search.
+These codes are also returned in SSE `error` events.
+
+| Code | Meaning |
+|---|---|
+| `amvera_invalid_response` | Malformed completion envelope, missing fields, or incorrect field types |
+| `amvera_empty_completion` | Final `content` is null, empty, or whitespace-only |
+| `amvera_output_limit` | `finish_reason=length`; generation stopped at the token limit |
+| `amvera_invalid_json` | Provider response body is not valid JSON |
+| `amvera_invalid_request` | Provider returned HTTP 400 |
+| `amvera_authentication_error` | Provider returned HTTP 401 |
+| `amvera_authorization_error` | Provider returned HTTP 403 |
+| `amvera_billing_error` | Provider returned HTTP 402 |
+| `amvera_rate_limit` | Provider returned HTTP 429 |
+| `amvera_gateway_error` | Provider returned HTTP 500 |
+| `amvera_upstream_error` | Provider returned HTTP 502, 503, or 504 |
+| `amvera_http_error` | Other unsuccessful provider HTTP status |
+| `amvera_configuration_error` | Required provider settings are missing |
+| `amvera_timeout` | Local provider request timed out |
+| `amvera_connection_error` | Provider request failed at the transport layer |
+
+Upstream HTTP failures still return HTTP 502 from this service, with the
+upstream status in the safe message; local timeouts return 504 and missing
+configuration returns 503. These statuses concern the configured provider,
+not the caller's authentication or billing with this service.
+Logs record the provider, error code, and service status, without provider
+response bodies. A null/empty completion alone does not prove token exhaustion:
+`amvera_output_limit` requires an explicit `finish_reason=length`.
+Limit-stopped completions are rejected even if they contain text or parseable
+JSON, because they may be incomplete. Neither these errors nor other provider
+failures trigger automatic retries. The existing single repair attempt for
+invalid structured model output remains unchanged (`invalid_model_output`).
+Model, temperature, and output token settings are unchanged.
+
 Requests have bounded field sizes, a 1 MB Content-Length limit, a combined
 context cap, provider timeouts, and a concurrent request limit. This service is
 for local testing only: it has no authentication and must not be exposed publicly
