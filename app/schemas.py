@@ -5,6 +5,15 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 EntityType = Literal["project", "goal", "task", "subTask"]
+AIHereModel = Literal[
+    "gemini-3-6-flash",
+    "gemini-3-6-flash-openai",
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "gpt-5-6-luna",
+    "gpt-5-6-terra",
+    "gpt-5-6-sol",
+]
 
 
 class UserRecord(BaseModel):
@@ -25,6 +34,7 @@ class AnswerRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(min_length=1, max_length=4000)
+    model: AIHereModel | None = None
     web_search: bool = False
     include_images: bool = False
     records: list[UserRecord] = Field(default_factory=list, max_length=40)
@@ -43,6 +53,7 @@ class EditRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     action: Literal["rewrite", "continue"]
+    model: AIHereModel | None = None
     text: str = Field(min_length=1, max_length=12000)
     instruction: str | None = Field(default=None, max_length=2000)
     context: str | None = Field(default=None, max_length=6000)

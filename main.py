@@ -9,6 +9,7 @@ from app.core.middleware import register_middlewares
 from app.services.service import AIService
 from settings import Settings
 
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Создаёт FastAPI-приложение и подключает его основные компоненты.
 
@@ -45,6 +46,5 @@ app = create_app()
 # register_middlewares(app)
 # register_exception_handlers(app)
 # app.include_router(router)
-
 
 

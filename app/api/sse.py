@@ -41,8 +41,7 @@ async def event_stream(operation: Operation) -> AsyncIterator[ServerSentEvent]:
                     "error",
                     {
                         "request_id": request_id,
-                        "code": exc.code,
-                        "message": exc.message,
+                        **exc.as_dict(),
                     },
                 )
             )

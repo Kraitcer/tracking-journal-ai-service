@@ -10,7 +10,14 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from app.api.providers import AmveraClient, ProviderError, TavilyClient
+from app.api.providers import (
+    AiHereClient,
+    AmveraClient,
+    CompletionClient,
+    FailoverClient,
+    ProviderError,
+    TavilyClient,
+)
 from app.schemas import (
     AnswerContent,
     AnswerRequest,
@@ -31,12 +38,28 @@ Output = TypeVar("Output")
 class ServiceError(Exception):
     """Ошибка AI-сервиса с сообщением, HTTP-статусом и кодом для ответа API."""
 
-    def __init__(self, message: str, status_code: int, code: str):
+    def __init__(
+        self,
+        message: str,
+        status_code: int,
+        code: str,
+        provider_response: dict[str, int | str] | None = None,
+    ):
         """Сохраняет описание и коды ошибки для обработки на уровне API."""
         super().__init__(message)
         self.message = message
         self.status_code = status_code
         self.code = code
+        self.provider_response = provider_response
+
+    def as_dict(self) -> dict[str, str | dict[str, int | str]]:
+        error: dict[str, str | dict[str, int | str]] = {
+            "code": self.code,
+            "message": self.message,
+        }
+        if self.provider_response is not None:
+            error["provider_response"] = self.provider_response
+        return error
 
 
 class AIService:
@@ -45,12 +68,19 @@ class AIService:
     def __init__(
         self,
         settings: Settings,
-        amvera: AmveraClient | None = None,
+        amvera: CompletionClient | None = None,
         tavily: TavilyClient | None = None,
+        aihere: CompletionClient | None = None,
     ):
-        """Подключает клиентов провайдеров и учёт одновременно выполняемых запросов."""
+        """Подключает основной и резервный LLM-клиенты и учёт запросов."""
         self.settings = settings
-        self.amvera = amvera or AmveraClient(settings)
+        if aihere is None and amvera is None:
+            self.llm = FailoverClient(AiHereClient(settings), AmveraClient(settings))
+        elif aihere is not None:
+            self.llm = FailoverClient(aihere, amvera or AmveraClient(settings))
+        else:
+            assert amvera is not None
+            self.llm = amvera
         self.tavily = tavily or TavilyClient(settings)
         self._active_requests = 0
         self._request_lock = asyncio.Lock()
@@ -103,8 +133,8 @@ class AIService:
                 )
 
             await _report(progress, "generating_answer")
-            answer_content, usage = await self._generate_answer(
-                payload.question, context_parts, sources, progress
+            answer_content, usage, model = await self._generate_answer(
+                payload.question, context_parts, sources, progress, payload.model
             )
             await _report(progress, "validating_sources")
 
@@ -115,7 +145,7 @@ class AIService:
                 blocks=blocks,
                 sources=sources,
                 warnings=[],
-                model=self.settings.amvera_model,
+                model=model,
                 usage=usage,
             )
 
@@ -158,17 +188,18 @@ class AIService:
                 "source_text": payload.text,
                 "context": payload.context or "",
             }
-            content, usage = await self._complete_json(
+            content, usage, model = await self._complete_json(
                 system,
                 json.dumps(user, ensure_ascii=False),
                 self._validate_edit_json,
                 progress,
+                payload.model,
             )
             return EditResponse(
                 request_id=request_id,
                 action=payload.action,
                 suggested_text=content["suggested_text"],
-                model=self.settings.amvera_model,
+                model=model,
                 usage=usage,
             )
 
@@ -177,7 +208,9 @@ class AIService:
         try:
             return await self.tavily.search(question, include_images)
         except ProviderError as exc:
-            raise ServiceError(str(exc), exc.status_code, exc.code) from exc
+            raise ServiceError(
+                str(exc), exc.status_code, exc.code, exc.provider_response
+            ) from exc
 
     def _build_web_context(
         self, data: dict, include_images: bool
@@ -277,7 +310,8 @@ class AIService:
         context_parts: list[str],
         sources: list[Source],
         progress: ProgressCallback | None,
-    ) -> tuple[AnswerContent, dict[str, int] | None]:
+        model: str | None = None,
+    ) -> tuple[AnswerContent, dict[str, int] | None, str]:
         """Готовит запрос модели и возвращает блоки ответа с проверенными ссылками.
 
         Передаёт вопрос, контекст и допустимые идентификаторы источников,
@@ -311,6 +345,7 @@ class AIService:
                 value, bool(sources), {source.source_id for source in sources}
             ),
             progress,
+            model,
         )
 
     async def _complete_json(
@@ -319,8 +354,9 @@ class AIService:
         user: str,
         validator: Callable[[object], Output],
         progress: ProgressCallback | None,
-    ) -> tuple[Output, dict[str, int] | None]:
-        """Получает JSON от Amvera и проверяет его переданным валидатором.
+        model: str | None = None,
+    ) -> tuple[Output, dict[str, int] | None, str]:
+        """Получает JSON от LLM и проверяет его переданным валидатором.
 
         При неверном формате или содержимом один раз просит модель исправить
         ответ; ошибки провайдера и повторный провал проверки передаёт как ServiceError.
@@ -331,15 +367,15 @@ class AIService:
         ]
         for attempt in range(2):
             try:
-                raw, usage = await self.amvera.complete(messages)
+                completion = await self.llm.complete(messages, model)
             except ProviderError as exc:
                 raise ServiceError(
-                    str(exc), exc.status_code, exc.code
+                    str(exc), exc.status_code, exc.code, exc.provider_response
                 ) from exc
             try:
-                parsed = json.loads(raw)
+                parsed = json.loads(completion.content)
                 validated = validator(parsed)
-                return validated, usage
+                return validated, completion.usage, completion.model
             except (json.JSONDecodeError, ValidationError, ValueError) as exc:
                 if attempt:
                     raise ServiceError(
@@ -350,7 +386,7 @@ class AIService:
                 await _report(progress, "repairing_structured_output")
                 messages.extend(
                     [
-                        {"role": "assistant", "content": raw},
+                        {"role": "assistant", "content": completion.content},
                         {
                             "role": "user",
                             "content": (

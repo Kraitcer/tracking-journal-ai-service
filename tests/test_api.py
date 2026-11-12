@@ -2,7 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from app.api.providers import ProviderError
+from app.api.providers import CompletionResult, ProviderError
 from app.services.service import AIService
 from main import create_app
 from settings import Settings
@@ -12,14 +12,18 @@ class FakeAmvera:
     def __init__(self, outputs=None):
         self.outputs = list(outputs or [])
         self.messages = []
+        self.models = []
 
-    async def complete(self, messages):
+    async def complete(self, messages, model=None):
         self.messages.append(messages)
+        self.models.append(model)
         if self.outputs:
-            return self.outputs.pop(0), {"total_tokens": 12}
+            return CompletionResult(
+                self.outputs.pop(0), {"total_tokens": 12}, model or "test-model"
+            )
         request = json.loads(messages[1]["content"])
         source_ids = request.get("available_source_ids", [])
-        return (
+        return CompletionResult(
             json.dumps(
                 {
                     "blocks": [
@@ -32,6 +36,7 @@ class FakeAmvera:
                 }
             ),
             {"total_tokens": 12},
+            model or "test-model",
         )
 
 
@@ -101,6 +106,39 @@ def test_answer_without_web_search_does_not_call_tavily():
     assert response.status_code == 200
     assert response.json()["sources"] == []
     assert tavily.queries == []
+
+
+def test_request_can_select_aihere_model_for_answer_and_edit():
+    model = "claude-sonnet-5"
+    answer_client_model = FakeAmvera()
+    edit_client_model = FakeAmvera([json.dumps({"suggested_text": "Edited."})])
+
+    answer = build_client(amvera=answer_client_model).post(
+        "/v1/answers",
+        json={"question": "Question", "model": model},
+    )
+    edit = build_client(amvera=edit_client_model).post(
+        "/v1/edits",
+        json={"action": "rewrite", "text": "Original", "model": model},
+    )
+
+    assert answer.status_code == 200
+    assert answer.json()["model"] == model
+    assert edit.status_code == 200
+    assert edit.json()["model"] == model
+    assert answer_client_model.models == [model]
+    assert edit_client_model.models == [model]
+
+
+def test_request_rejects_unlisted_aihere_model():
+    amvera = FakeAmvera()
+    response = build_client(amvera=amvera).post(
+        "/v1/answers",
+        json={"question": "Question", "model": "unlisted-model"},
+    )
+
+    assert response.status_code == 422
+    assert amvera.models == []
 
 
 def test_web_search_sources_citations_and_images_are_bound_by_service():
@@ -274,7 +312,7 @@ def test_sse_endpoint_streams_progress_and_result():
 
 def test_provider_failure_is_reported_without_secret_details():
     class BrokenAmvera:
-        async def complete(self, _):
+        async def complete(self, _, model=None):
             raise ProviderError("amvera", "Configured key rejected.", 503)
 
     response = build_client(amvera=BrokenAmvera()).post(

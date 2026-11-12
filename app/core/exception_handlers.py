@@ -15,7 +15,7 @@ def register_exception_handlers(application: FastAPI) -> None:
         """Преобразует ошибку AI-сервиса в JSON с её HTTP-статусом, кодом и сообщением."""
         return JSONResponse(
             status_code=exc.status_code,
-            content={"error": {"code": exc.code, "message": exc.message}},
+            content={"error": exc.as_dict()},
         )
 
     @application.exception_handler(RequestValidationError)

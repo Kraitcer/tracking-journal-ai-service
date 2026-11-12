@@ -8,11 +8,14 @@ from dataclasses import dataclass
 class Settings:
     """Неизменяемые настройки провайдеров и ограничений AI-сервиса.
 
-    Хранит ключи API, адрес и модель Amvera, таймаут HTTP-запросов,
+    Хранит ключи API, адреса и модели AIhere и Amvera, таймаут HTTP-запросов,
     лимиты выходных токенов, параллельных запросов и результатов поиска,
     а также ограничения объёма одного источника и общего контекста в символах.
     """
 
+    aihere_api_key: str = ""
+    aihere_base_url: str = "https://api.aihere.ru/api/v1"
+    aihere_model: str = ""
     amvera_api_key: str = ""
     amvera_base_url: str = "https://inference.waw0.amvera.ru/v1"
     amvera_model: str = ""
@@ -23,6 +26,7 @@ class Settings:
     max_search_results: int = 5
     max_source_chars: int = 6000
     max_context_chars: int = 24000
+    expose_provider_error_body: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -33,6 +37,11 @@ class Settings:
         неверные значения вызывают ValueError.
         """
         return cls(
+            aihere_api_key=os.getenv("AIHERE_API_KEY", "").strip(),
+            aihere_base_url=os.getenv(
+                "AIHERE_BASE_URL", "https://api.aihere.ru/api/v1"
+            ).rstrip("/"),
+            aihere_model=os.getenv("AIHERE_MODEL", "").strip(),
             amvera_api_key=os.getenv("AMVERA_API_KEY", "").strip(),
             amvera_base_url=os.getenv(
                 "AMVERA_BASE_URL", "https://inference.waw0.amvera.ru/v1"
@@ -47,7 +56,17 @@ class Settings:
             max_search_results=_positive_int("MAX_SEARCH_RESULTS", 5),
             max_source_chars=_positive_int("MAX_SOURCE_CHARS", 6000),
             max_context_chars=_positive_int("MAX_CONTEXT_CHARS", 24000),
+            expose_provider_error_body=_bool_env("EXPOSE_PROVIDER_ERROR_BODY"),
         )
+
+
+def _bool_env(name: str) -> bool:
+    value = os.getenv(name, "false").strip().lower()
+    if value in ("true", "1"):
+        return True
+    if value in ("false", "0"):
+        return False
+    raise ValueError(f"{name} must be true, false, 1, or 0.")
 
 
 def _positive_float(name: str, default: float) -> float:
