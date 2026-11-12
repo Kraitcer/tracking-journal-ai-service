@@ -6,13 +6,19 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 EntityType = Literal["project", "goal", "task", "subTask"]
 AIHereModel = Literal[
-    "gemini-3-6-flash",
-    "gemini-3-6-flash-openai",
-    "claude-sonnet-5",
-    "claude-opus-5",
-    "gpt-5-6-luna",
+    "gemini-3-8-flash",
+    "gemini-3-8-flash-openai",
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "claude-fable-5",
+    "gpt-6-luna",
     "gpt-5-6-terra",
-    "gpt-5-6-sol",
+    "gpt-6-1-sol",
+    "gpt-6-astra",
+    "kimi-k3",
+    "deepseek-v4-1-flash",
+    "grok-4-7",
 ]
 
 

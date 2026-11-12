@@ -109,7 +109,7 @@ def test_answer_without_web_search_does_not_call_tavily():
 
 
 def test_request_can_select_aihere_model_for_answer_and_edit():
-    model = "claude-sonnet-5"
+    model = "gemini-3-8-flash"
     answer_client_model = FakeAmvera()
     edit_client_model = FakeAmvera([json.dumps({"suggested_text": "Edited."})])
 
@@ -134,7 +134,7 @@ def test_request_rejects_unlisted_aihere_model():
     amvera = FakeAmvera()
     response = build_client(amvera=amvera).post(
         "/v1/answers",
-        json={"question": "Question", "model": "unlisted-model"},
+        json={"question": "Question", "model": "gemini-3-6-flash"},
     )
 
     assert response.status_code == 422

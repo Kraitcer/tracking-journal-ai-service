@@ -87,11 +87,13 @@ Provider requests are made only when an endpoint is called.
 
 The optional `model` field selects an AIhere model for this request. It is
 available on `/v1/answers`, `/v1/edits`, and their SSE variants. If omitted,
-the service uses `AIHERE_MODEL`. Allowed values are `gemini-3-6-flash`,
-`gemini-3-6-flash-openai`, `claude-sonnet-5`, `claude-opus-5`,
-`gpt-5-6-luna`, `gpt-5-6-terra`, and `gpt-5-6-sol`. Unknown model IDs are
-rejected with HTTP 422. If AIhere fails over to Amvera, the configured
-`AMVERA_MODEL` is used instead.
+the service uses `AIHERE_MODEL`. Accepted IDs reported by AIhere are
+`gemini-3-8-flash`, `gemini-3-8-flash-openai`, `claude-haiku-5-5`,
+`claude-sonnet-5-5`, `claude-opus-5-5`, `claude-fable-5`, `gpt-6-luna`,
+`gpt-5-6-terra`, `gpt-6-1-sol`, `gpt-6-astra`, `kimi-k3`,
+`deepseek-v4-1-flash`, and `grok-4-7`. Unknown model IDs are rejected with
+HTTP 422. If AIhere fails over to Amvera, the configured `AMVERA_MODEL` is
+used instead.
 
 ### Answer with web search and images
 
